@@ -74,6 +74,16 @@ def get_FashionMNIST_datasets(batch_size=64, only_loader=True):
     else:
         return train_dataloader, test_dataloader, training_data, test_data
 
+def BNNetwork(N, subset):
+    N_tr_BN = N
+    for xk in subset:
+        yk = BNT(xk)
+        N_tr_BN.hidden_lay
+
+    
+    N_inf_BN = N_tr_BN
+#test tkt hello
+
 
 # Define model
 class FMNIST_MLP(nn.Module):
