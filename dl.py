@@ -20,7 +20,6 @@ import streamlit as st
 
 from viz import training_curves
 
-
 def get_FashionMNIST_datasets(batch_size=64, only_loader=True):
     """Loads and returns the FashionMNIST dataset.
 
