@@ -20,6 +20,8 @@ import streamlit as st
 
 from viz import training_curves
 
+print("yow_Elona_test")
+print("test")
 
 def get_FashionMNIST_datasets(batch_size=64, only_loader=True):
     """Loads and returns the FashionMNIST dataset.
