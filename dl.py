@@ -20,9 +20,6 @@ import streamlit as st
 
 from viz import training_curves
 
-print("yow_Elona_test")
-print("test")
-
 def get_FashionMNIST_datasets(batch_size=64, only_loader=True):
     """Loads and returns the FashionMNIST dataset.
 
@@ -73,6 +70,13 @@ def get_FashionMNIST_datasets(batch_size=64, only_loader=True):
         return train_dataloader, test_dataloader
     else:
         return train_dataloader, test_dataloader, training_data, test_data
+
+def BNT(batch,gamma, beta, eps=0.1):
+    m=len(batch)
+    mu_b = (1/m)*np.sum(batch, axis=0)
+    sigma2 = (1/m)*np.sum((batch-mu_b)**2, axis=0)
+    x_chap = (batch-mu_b)/np.sqrt(sigma2+eps)
+    return gamma*x_chap+beta, gamma, beta, x_chap
 
 def BNNetwork(N, subset):
     N_tr_BN = N
