@@ -71,6 +71,40 @@ def get_FashionMNIST_datasets(batch_size=64, only_loader=True):
     else:
         return train_dataloader, test_dataloader, training_data, test_data
 
+def mean(batch):
+    """gives the mean of the input
+    
+    Parameters
+    ----------
+    batch: list
+        The input data
+    
+    Returns
+    ----------
+    The mean of the data
+    """
+    m=len(batch)
+    return (1/m)*np.sum(batch, axis=0)
+
+def variance(batch, moy = None):
+    """gives the variance of the input
+    
+    Parameters
+    ----------
+    batch: list
+        The input data
+    moy: type of elements in batch, default=None
+        the mean of the batch if it has already been calculated
+    
+    Returns
+    ----------
+    The Variance of the data
+    """
+    m=len(batch)
+    if moy is None:
+        moy = mean(batch)
+    return (1/m)*np.sum((batch-moy)**2, axis=0)
+
 def BNT(batch, gamma, beta, eps=0.1):
     """Normalizes the input data for each of its activations, then scale and shift them
     
@@ -92,13 +126,76 @@ def BNT(batch, gamma, beta, eps=0.1):
     
     """
 
-    m=len(batch)
-    mu_b = (1/m)*np.sum(batch, axis=0)
-    sigma2 = (1/m)*np.sum((batch-mu_b)**2, axis=0)
+    mu_b = mean(batch)
+    sigma2 = variance(batch, mu_b)
     x_chap = (batch-mu_b)/np.sqrt(sigma2+eps)
     return gamma*x_chap+beta
 
-def BNNetwork(N, subset, gamma = 1, beta = 0):
+def append_list(liste, *args):
+    """Appends args at the end of the list, modifies the input list
+    
+    Parameters
+    ----------
+    liste: list
+        A list.
+    args: Any
+        added objects.
+
+    Modifies 'liste'
+    """
+    for x in args:
+        liste.append(x)
+
+def insert_BNT(liste, element, criteria, before):
+    """returns a list, based on 'liste' in which objects are added following a criteria, each time the criteria is completed
+    
+    Parameters
+    ----------
+    liste: list
+        The input list.
+    element: Any
+        The inserted element.
+    criteria: fun : element of 'liste' -> boolean
+        When it is inserted.
+    before: boolean
+        Where it is inserted : if True, before the element, else after
+    
+    Returns
+    -----------
+    new : 'liste' with 'element' inserted based on the condition 'criteria' and 'before'
+    """
+    new = []
+    for x in liste:
+        if criteria(x):
+            if before:
+                append_list(new, element, x)
+            else:
+                append_list(new, x, element)
+        else:
+            new.append(x)
+    return new
+
+def replace_BNT(liste, new, condition):
+    """Replaces elements of liste by new ones based on a condition, modifies the input list
+
+    Parameters
+    ----------
+
+    liste: list
+        The input list
+    new: Any
+        The replacing object
+    condition: fun : element of list -> boolean
+        The condition on which the element is replaced
+    
+    Modifies 'liste'
+    """
+    for i, x in enumerate(liste):
+        if condition(x):
+            liste[i] = new
+    return liste
+
+def BNNetwork(N, subset, gamma = 1, beta = 0, before_ReLU = True):
     """Creates a Batch Normalised Network from a basic network with optimized hyperparameters
     
     Parameters
@@ -106,12 +203,14 @@ def BNNetwork(N, subset, gamma = 1, beta = 0):
     N: FMNIST_MLP
         a MLP network.
     subset: list
-        a batch.
+        a batch?
     gamma: float, default=1
         The scale parameter to be optimized.
     beta: float, default=0
         The shift parameter to be optimized.
-    
+    before_ReLU: boolean, default=True
+        Applies the transformation before the activation function
+        if True, else right after it
 
     Returns
     ----------
@@ -120,12 +219,53 @@ def BNNetwork(N, subset, gamma = 1, beta = 0):
     """
 
     N_tr_BN = N.copy()
-    BN = lambda x : BNT(x, gamma, beta)
-    N_tr_BN.lol
 
+    BN = lambda x : BNT(x, gamma, beta)
+    input = N_tr_BN.get_input()
+    list_hidden = N_tr_BN.get_list_hidden()
+    output = N_tr_BN.get_output()
     
+    #step 3
+    new_input = insert_BNT(input, BN, lambda x : isinstance(x, torch.nn.modules.activation.ReLU), before_ReLU)
+    #step 4
+    new_hidden = insert_BNT(list_hidden, BN, lambda x : isinstance(x, torch.nn.modules.activation.ReLU), before_ReLU)
+    
+    N_tr_BN.set_list_hidden(new_hidden)
+    N_tr_BN.set_input(new_input)
+    N_tr_BN.set_linear_relu_stack = nn.Sequential(
+            *input,
+            *list_hidden,
+            *output
+        )
+
+
+    #step 6 optimiser les hyper sur le réseau TODO
+    gamma = None
+    beta = None
+
+    #step 7
     N_inf_BN = N_tr_BN
-#test tkt hello
+
+    #step 10???????? TODO
+    wtf = "wtf"
+    esp = mean(wtf)
+    var = variance(wtf, esp)
+
+    #step 11
+    #wtf is epsilon TODO
+    epsilon = "what the f*** am I"
+    temp = gamma/np.sqrt(var+epsilon)
+    new_BN = lambda x : (temp)*x + (beta - temp*esp)
+    
+    N_inf_BN.set_input(replace_BNT(N_inf_BN.get_input(), new_BN, lambda x : x.__name__ == "<lambda>"))
+    N_inf_BN.set_list_hidden(replace_BNT(N_inf_BN.get_list_hidden(), new_BN, lambda x : x.__name__ == "<lambda>"))
+    N_inf_BN.set_linear_relu_stack = nn.Sequential(
+            *input,
+            *list_hidden,
+            *output
+        )
+
+
 
 # Define model
 class FMNIST_MLP(nn.Module):
@@ -153,41 +293,67 @@ class FMNIST_MLP(nn.Module):
 
         super().__init__()
         self.flatten = nn.Flatten()
+        self.input = [
+            nn.Linear(28 * 28, 512),
+            nn.ReLU(),
+            nn.Dropout(dropout_rate)
+            ]
         self.list_hidden = []
+        self.output = [nn.Linear(512, 10)]
+        
         for _ in range(hidden_layers - 1):
             #step 4(merci Elona) :ajouter ici via BNNetwork: list_hidden.append(lambda x : BNT(x))
             self.list_hidden.append(nn.Linear(512, 512))
             self.list_hidden.append(nn.ReLU())
             #(juste pour comprendre) à la place de nn.ReLu() on pourrait mettre : list_hidden.append(lambda x : np.max(x, 0))
             self.list_hidden.append(nn.Dropout(dropout_rate))
+        
         self.linear_relu_stack = nn.Sequential(
             #step 3 : BNT aussi
-            nn.Linear(28 * 28, 512),
-            nn.ReLU(),
-            nn.Dropout(dropout_rate),
+            *self.input,
             *self.list_hidden,
-            nn.Linear(512, 10),
+            *self.output
         )
+
         self.metrics = pd.DataFrame(
             columns=["train_loss", "train_acc", "test_loss", "test_acc"]
         )
 
-    def forward(self, x):
-        """The forward pass.
+    """getters"""
+    def get_flatten(self):
+        return self.flatten
+        
+    def get_input(self):
+        return self.input
+    
+    def get_list_hidden(self):
+        return self.list_hidden
+    
+    def get_output(self):
+        return self.output
+    
+    def get_linear_relu_stack(self):
+        return self.linear_relu_stack
+    
+    def get_metrics(self):
+        return self.metrics
+    
 
-        Parameters
-        ----------
-        x: Tensor
-            The input tensor, of shape `(batch_size, 1, 28, 28)`.
-
-        Returns
-        -------
-        logits: Tensor
-            The unnormalized logits, of shape `(batch_size, 10)`.
-        """
-        x = self.flatten(x)
-        logits = self.linear_relu_stack(x)
-        return logits
+    """setters"""
+    def set_flatten(self, f):
+        self.flatten = f
+        
+    def set_input(self, i):
+        self.input = i
+    
+    def set_list_hidden(self, liste):
+        self.list_hidden = liste
+    
+    def set_output(self, o):
+        self.output = o
+    
+    def set_linear_relu_stack(self, lrs):
+        self.linear_relu_stack = lrs
 
     def set_metrics(self, df):
         """Sets the metrics dataframe.
@@ -206,6 +372,23 @@ class FMNIST_MLP(nn.Module):
 
         """
         self.metrics = df
+
+    def forward(self, x):
+        """The forward pass.
+
+        Parameters
+        ----------
+        x: Tensor
+            The input tensor, of shape `(batch_size, 1, 28, 28)`.
+
+        Returns
+        -------
+        logits: Tensor
+            The unnormalized logits, of shape `(batch_size, 10)`.
+        """
+        x = self.flatten(x)
+        logits = self.linear_relu_stack(x)
+        return logits
 
     def update_metrics(self, series):
         """Updates the metrics dataframe after one epoch.
