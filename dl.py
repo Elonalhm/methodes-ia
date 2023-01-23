@@ -71,23 +71,61 @@ def get_FashionMNIST_datasets(batch_size=64, only_loader=True):
     else:
         return train_dataloader, test_dataloader, training_data, test_data
 
-def BNT(batch,gamma, beta, eps=0.1):
+def BNT(batch, gamma, beta, eps=0.1):
+    """Normalizes the input data for each of its activations, then scale and shift them
+    
+    Parameters
+    ----------
+    batch: list
+        The non-normalized input mini-batch of data.
+    gamma: float
+        The scale parameter.
+    beta: float
+        The shift parameter.
+    eps: float, default=0.1
+        The small constant added for stability.
+    
+
+    Returns
+    ----------
+    The scaled and shifted normalized activations of the input
+    
+    """
+
     m=len(batch)
     mu_b = (1/m)*np.sum(batch, axis=0)
     sigma2 = (1/m)*np.sum((batch-mu_b)**2, axis=0)
     x_chap = (batch-mu_b)/np.sqrt(sigma2+eps)
-    return gamma*x_chap+beta, gamma, beta, x_chap
+    return gamma*x_chap+beta
 
-def BNNetwork(N, subset):
-    N_tr_BN = N
-    for xk in subset:
-        yk = BNT(xk)
-        N_tr_BN.hidden_lay
+def BNNetwork(N, subset, gamma = 1, beta = 0):
+    """Creates a Batch Normalised Network from a basic network with optimized hyperparameters
+    
+    Parameters
+    ----------
+    N: FMNIST_MLP
+        a MLP network.
+    subset: list
+        a batch.
+    gamma: float, default=1
+        The scale parameter to be optimized.
+    beta: float, default=0
+        The shift parameter to be optimized.
+    
+
+    Returns
+    ----------
+    A batch normalised network with fixed, optimized hyperparameters.
+    
+    """
+
+    N_tr_BN = N.copy()
+    BN = lambda x : BNT(x, gamma, beta)
+    N_tr_BN.lol
 
     
     N_inf_BN = N_tr_BN
 #test tkt hello
-
 
 # Define model
 class FMNIST_MLP(nn.Module):
@@ -115,16 +153,19 @@ class FMNIST_MLP(nn.Module):
 
         super().__init__()
         self.flatten = nn.Flatten()
-        list_hidden = []
+        self.list_hidden = []
         for _ in range(hidden_layers - 1):
-            list_hidden.append(nn.Linear(512, 512))
-            list_hidden.append(nn.ReLU())
-            list_hidden.append(nn.Dropout(dropout_rate))
+            #step 4(merci Elona) :ajouter ici via BNNetwork: list_hidden.append(lambda x : BNT(x))
+            self.list_hidden.append(nn.Linear(512, 512))
+            self.list_hidden.append(nn.ReLU())
+            #(juste pour comprendre) à la place de nn.ReLu() on pourrait mettre : list_hidden.append(lambda x : np.max(x, 0))
+            self.list_hidden.append(nn.Dropout(dropout_rate))
         self.linear_relu_stack = nn.Sequential(
+            #step 3 : BNT aussi
             nn.Linear(28 * 28, 512),
             nn.ReLU(),
             nn.Dropout(dropout_rate),
-            *list_hidden,
+            *self.list_hidden,
             nn.Linear(512, 10),
         )
         self.metrics = pd.DataFrame(
