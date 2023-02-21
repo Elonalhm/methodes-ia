@@ -195,75 +195,6 @@ def replace_BNT(liste, new, condition):
             liste[i] = new
     return liste
 
-def BNNetwork(N, subset, gamma = 1, beta = 0, before_ReLU = True):
-    """Creates a Batch Normalised Network from a basic network with optimized hyperparameters
-    
-    Parameters
-    ----------
-    N: FMNIST_MLP
-        a MLP network.
-    subset: list
-        a batch?
-    gamma: float, default=1
-        The scale parameter to be optimized.
-    beta: float, default=0
-        The shift parameter to be optimized.
-    before_ReLU: boolean, default=True
-        Applies the transformation before the activation function
-        if True, else right after it
-
-    Returns
-    ----------
-    A batch normalised network with fixed, optimized hyperparameters.
-    
-    """
-
-    N_tr_BN = N.copy()
-
-    BN = lambda x : BNT(x, gamma, beta)
-    input = N_tr_BN.get_input()
-    list_hidden = N_tr_BN.get_list_hidden()
-    output = N_tr_BN.get_output()
-    
-    #step 3
-    new_input = insert_BNT(input, BN, lambda x : isinstance(x, torch.nn.modules.activation.ReLU), before_ReLU)
-    #step 4
-    new_hidden = insert_BNT(list_hidden, BN, lambda x : isinstance(x, torch.nn.modules.activation.ReLU), before_ReLU)
-    
-    N_tr_BN.set_list_hidden(new_hidden)
-    N_tr_BN.set_input(new_input)
-    N_tr_BN.set_linear_relu_stack = nn.Sequential(
-            *input,
-            *list_hidden,
-            *output
-        )
-
-
-    #step 6 optimiser les hyper sur le réseau TODO
-    gamma = None
-    beta = None
-
-    #step 7
-    N_inf_BN = N_tr_BN
-
-    #step 10???????? TODO
-    wtf = "wtf"
-    esp = mean(wtf)
-    var = variance(wtf, esp)
-
-    #step 11
-    #wtf is epsilon TODO
-    epsilon = "what the f*** am I"
-    temp = gamma/np.sqrt(var+epsilon)
-    new_BN = lambda x : (temp)*x + (beta - temp*esp)
-    
-    N_inf_BN.set_input(replace_BNT(N_inf_BN.get_input(), new_BN, lambda x : x.__name__ == "<lambda>"))
-    N_inf_BN.set_list_hidden(replace_BNT(N_inf_BN.get_list_hidden(), new_BN, lambda x : x.__name__ == "<lambda>"))
-    N_inf_BN.set_linear_relu_stack = nn.Sequential(
-            *input,
-            *list_hidden,
-            *output
-        )
 
 
 
@@ -405,6 +336,84 @@ class FMNIST_MLP(nn.Module):
 
         """
         self.metrics = pd.concat([self.metrics, series.to_frame().T], ignore_index=True)
+
+
+def BNNetwork(N, subset, optimizer, loss_fn, gamma = 1, beta = 0, before_ReLU = True):
+    """Creates a Batch Normalised Network from a basic network with optimized hyperparameters
+    
+    Parameters
+    ----------
+    N: FMNIST_MLP
+        a MLP network.
+    subset: list
+        a batch?
+    gamma: float, default=1
+        The scale parameter to be optimized.
+    beta: float, default=0
+        The shift parameter to be optimized.
+    before_ReLU: boolean, default=True
+        Applies the transformation before the activation function
+        if True, else right after it
+    optimizer : string
+        Minimise the loss function
+    loss_fn : string
+        The loss function
+
+    Returns
+    ----------
+    A batch normalised network with fixed, optimized hyperparameters.
+    
+    """
+
+    N_tr_BN = N.copy()
+
+    BN = lambda x : BNT(x, gamma, beta)
+    input = N_tr_BN.get_input()
+    list_hidden = N_tr_BN.get_list_hidden()
+    output = N_tr_BN.get_output()
+    
+
+    #step 3
+    new_input = insert_BNT(input, BN, lambda x : isinstance(x, torch.nn.modules.activation.ReLU), before_ReLU)
+    #step 4
+    new_hidden = insert_BNT(list_hidden, BN, lambda x : isinstance(x, torch.nn.modules.activation.ReLU), before_ReLU)
+    
+    N_tr_BN.set_list_hidden(new_hidden)
+    N_tr_BN.set_input(new_input)
+    N_tr_BN.set_linear_relu_stack = nn.Sequential(
+            *input,
+            *list_hidden,
+            *output
+        )
+
+
+    #step 6 optimiser les hyper sur le réseau TODO
+    
+    gamma = None
+    beta = None
+
+    #step 7
+    N_inf_BN = N_tr_BN
+
+    #step 10???????? TODO
+    wtf = "wtf"
+    esp = mean(wtf)
+    var = variance(wtf, esp)
+
+    #step 11
+    #wtf is epsilon TODO
+    epsilon = "what the f*** am I"
+    temp = gamma/np.sqrt(var+epsilon)
+    new_BN = lambda x : (temp)*x + (beta - temp*esp)
+    
+    N_inf_BN.set_input(replace_BNT(N_inf_BN.get_input(), new_BN, lambda x : x.__name__ == "<lambda>"))
+    N_inf_BN.set_list_hidden(replace_BNT(N_inf_BN.get_list_hidden(), new_BN, lambda x : x.__name__ == "<lambda>"))
+    N_inf_BN.set_linear_relu_stack = nn.Sequential(
+            *input,
+            *list_hidden,
+            *output
+        )
+
 
 
 def train(dataloader, model, loss_fn, optimizer, device, mode=None):
