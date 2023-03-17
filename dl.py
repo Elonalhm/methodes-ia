@@ -71,61 +71,190 @@ def get_FashionMNIST_datasets(batch_size=64, only_loader=True):
     else:
         return train_dataloader, test_dataloader, training_data, test_data
 
-def BNT(batch, gamma, beta, eps=0.1):
-    """Normalizes the input data for each of its activations, then scale and shift them
+
+class BatchNormalization:
+    """ A changer : Normalizes the input data for each of its activations, then scale and shift them
     
     Parameters
     ----------
-    batch: list
-        The non-normalized input mini-batch of data.
-    gamma: float
-        The scale parameter.
-    beta: float
-        The shift parameter.
-    eps: float, default=0.1
+    input_size: int
+        Number of neurons in the layer
+    eps: float, default=1e-5
         The small constant added for stability.
-    
-
-    Returns
-    ----------
-    The scaled and shifted normalized activations of the input
+    momentum: float
+        Forgetting factor for moving averages and moving variances.
+    learning_rate: float, default=0.0
+        Multiplicative factor applied to the gradient to vary the gain of the gradient.
     
     """
+    def __init__(self, input_size, eps=1e-5, momentum=0.9, learning_rate=0.0):
+        self.eps = eps
+        self.learning_rate = learning_rate
+        self.momentum = momentum 
+        self.gamma = np.ones(input_size)
+        self.beta = np.zeros(input_size)
+        self.running_mean = np.zeros(input_size)
+        self.running_var = np.ones(input_size)
+        
+    def forward_BN(self, x, train=True):
+        """The forward pass.
 
-    m=len(batch)
-    mu_b = (1/m)*np.sum(batch, axis=0)
-    sigma2 = (1/m)*np.sum((batch-mu_b)**2, axis=0)
-    x_chap = (batch-mu_b)/np.sqrt(sigma2+eps)
-    return gamma*x_chap+beta
+        Parameters
+        ----------
+        x: Tensor
+            The input tensor, of shape `(batch_size, 1, 28, 28)`.
+        train: Boolean, default=True
+            True, if we are not in inference mode 
+            False, if we do
 
-def BNNetwork(N, subset, gamma = 1, beta = 0):
-    """Creates a Batch Normalised Network from a basic network with optimized hyperparameters
+        Returns
+        -------
+        The scaled and shifted normalized activations of the input and the normalized input.
+        """
+        if train:
+            # Calculate the mean and variance from the mini-batch
+            m=len(x)
+            mu = (1/m)*np.sum(x, axis=0)
+            var = (1/m)*np.sum((x-mu)**2, axis=0)
+            # Update moving averages and moving variances
+            self.running_mean = self.momentum * self.running_mean + (1 - self.momentum) * mu
+            self.running_var = self.momentum * self.running_var + (1 - self.momentum) * var
+        else:
+            # If we are in inference mode, use moving averages and stored moving variances
+            mu = self.running_mean
+            var = self.running_var
+        
+        # Normalization
+        x_norm = (x-mu)/np.sqrt(var + self.eps)
+        
+        # Scaling and shifting
+        out = self.gamma * x_norm + self.beta
+        
+        return out, x_norm
+    
+    def backward_BN(self, dout, x_norm):
+        """The backward pass.
+
+        Parameters
+        ----------
+        dout : Tensor
+            Gradient of the input of the forward function.
+        x_norm: Tensor
+            The normalized input.
+        Returns
+        -------
+        The scaled and shifted normalized activations of the input and the normalized input.
+        """
+        # Calculate the gradients of gamma, beta and x_norm
+        dgamma = np.sum(dout * x_norm, axis=0)
+        dbeta = np.sum(dout, axis=0)
+        dx_norm = dout * self.gamma
+        
+        # Calculate the mu and var gradients
+        N = x_norm.shape[0]
+        dvar = np.sum(dx_norm * (self.x - self.running_mean) * (-0.5) * (self.var + self.eps)**(-3/2), axis=0)
+        dmu = np.sum(dx_norm * (-1 / np.sqrt(self.var + self.eps)), axis=0) + dvar * np.mean(-2 * (self.x - self.running_mean), axis=0)
+        
+        # Calculate the gradient of the input
+        dx = dx_norm / np.sqrt(self.var + self.eps) + dvar * 2 * (self.x - self.running_mean) / N + dmu / N
+        
+        # Update the parameters of the Batch Normalization
+        self.gamma -= self.learning_rate * dgamma
+        self.beta -= self.learning_rate * dbeta
+        
+        return dx
+
+class LayerNormalization:
+    """ A changer : Normalizes the input data for each of its activations, then scale and shift them
     
     Parameters
     ----------
-    N: FMNIST_MLP
-        a MLP network.
-    subset: list
-        a batch.
-    gamma: float, default=1
-        The scale parameter to be optimized.
-    beta: float, default=0
-        The shift parameter to be optimized.
-    
-
-    Returns
-    ----------
-    A batch normalised network with fixed, optimized hyperparameters.
+    input_size: int
+        Number of neurons in the layer
+    eps: float, default=1e-5
+        The small constant added for stability.
+    alpha: float, default=0.99
+        Controls normalization. 
+    learning_rate: float, default=0.0
+        Multiplicative factor applied to the gradient to vary the gain of the gradient.
     
     """
+    def __init__(self, input_size, eps=1e-5, alpha=0.99, learning_rate=0.0):
+        self.eps = eps 
+        self.alpha = alpha 
+        self.learning_rate=learning_rate
+        self.gamma = np.ones(input_size)
+        self.beta = np.zeros(input_size)
+        self.running_mean = np.zeros(input_size)
+        self.running_var = np.ones(input_size)
+        
+    def forward_LN(self, x, train=True):
+        """The forward pass.
 
-    N_tr_BN = N.copy()
-    BN = lambda x : BNT(x, gamma, beta)
-    N_tr_BN.lol
+        Parameters
+        ----------
+        x: Tensor
+            The input tensor, of shape `(batch_size, 1, 28, 28)`.
+        train: Boolean, default=True
+            True, if we are not in inference mode 
+            False, if we do
 
+        Returns
+        -------
+        The scaled and shifted normalized activations of the input and the normalized input.
+        """
+        if train:
+            # Calculate the mean and variance from all layer activations
+            mu = np.mean(x, axis=1, keepdims=True)
+            var = np.var(x, axis=1, keepdims=True)
+            # Update moving average and moving variance
+            self.running_mean = self.alpha * self.running_mean + (1 - self.alpha) * mu
+            self.running_var = self.alpha * self.running_var + (1 - self.alpha) * var
+        else:
+            # If we are in inference mode, use the moving average and the moving variance stored
+            mu = self.running_mean
+            var = self.running_var
+        
+        # Normalization
+        x_norm = (x - mu) / np.sqrt(var + self.eps)
+        
+        # Scaling and shifting
+        out = self.gamma * x_norm + self.beta
+        
+        return out, x_norm
     
-    N_inf_BN = N_tr_BN
-#test tkt hello
+    def backward_LN(self, dout, x_norm):
+        """The backward pass.
+
+        Parameters
+        ----------
+        dout : Tensor
+            Gradient of the input of the forward function.
+        x_norm: Tensor
+            The normalized input.
+         
+        Returns
+        -------
+        The scaled and shifted normalized activations of the input and the normalized input.
+        """
+        # Calculate the gradients of gamma, beta and x_norm
+        dgamma = np.sum(dout * x_norm, axis=1, keepdims=True)
+        dbeta = np.sum(dout, axis=1, keepdims=True)
+        dx_norm = dout * self.gamma
+        
+        # Calculate the mu and var gradients
+        N = x_norm.shape[1]
+        dvar = np.sum(dx_norm * (self.x - self.running_mean) * (-0.5) * (self.var + self.eps)**(-3/2), axis=1, keepdims=True)
+        dmu = np.sum(dx_norm * (-1 / np.sqrt(self.var + self.eps)), axis=1, keepdims=True) + dvar * np.mean(-2 * (self.x - self.running_mean), axis=1, keepdims=True)
+        
+        # Calculate the gradient of the input
+        dx = dx_norm / np.sqrt(self.var + self.eps) + dvar * 2 * (self.x - self.running_mean) / N + dmu / N
+        
+        # Update Layer Normalization settings
+        self.gamma -= self.learning_rate * np.mean(dgamma, axis=0)
+        self.beta -= self.learning_rate * np.mean(dbeta, axis=0)
+        
+        return dx
 
 # Define model
 class FMNIST_MLP(nn.Module):
@@ -223,6 +352,199 @@ class FMNIST_MLP(nn.Module):
         """
         self.metrics = pd.concat([self.metrics, series.to_frame().T], ignore_index=True)
 
+
+class BN_FMNIST_MLP(nn.Module):
+    """The MLP model we train on the FashionMNIST dataset.
+
+    Parameters
+    ----------
+    hidden_layers: int, default=2
+        The number of hidden fully connected layers.
+    dropout_rate: float, default=0
+        The dropout rate.
+
+    Attributes
+    ----------
+    flatten: nn.Flatten
+        A flatten layer.
+    linear_relu_stack: nn.Sequential
+        A stack of liner layers with ReLU
+        activations.
+    metrics: pd.DataFrame
+        The training metrics dataframe.
+    """
+
+    def __init__(self, hidden_layers=2, dropout_rate=0.0):
+
+        super().__init__()
+        self.flatten = nn.Flatten()
+        self.list_hidden = []
+        for _ in range(hidden_layers - 1):
+            self.list_hidden.append(nn.Linear(512, 512))
+            self.list_hidden.append(self.BatchNormalization(512))
+            self.list_hidden.append(nn.ReLU())
+            
+            self.list_hidden.append(nn.Dropout(dropout_rate))
+        self.linear_relu_stack = nn.Sequential(
+            
+            nn.Linear(28 * 28, 512),
+            self.BatchNormalization(512),
+            nn.ReLU(),
+            nn.Dropout(dropout_rate),
+            *self.list_hidden,
+            nn.Linear(512, 10),
+        )
+        self.metrics = pd.DataFrame(
+            columns=["train_loss", "train_acc", "test_loss", "test_acc"]
+        )
+
+    def forward(self, x):
+        """The forward pass.
+
+        Parameters
+        ----------
+        x: Tensor
+            The input tensor, of shape `(batch_size, 1, 28, 28)`.
+
+        Returns
+        -------
+        logits: Tensor
+            The unnormalized logits, of shape `(batch_size, 10)`.
+        """
+        x = self.flatten(x)
+        logits = self.linear_relu_stack(x)
+        return logits
+
+    def set_metrics(self, df):
+        """Sets the metrics dataframe.
+
+        Used when a saved model is loaded,
+        to also load its past training metrics dataframe.
+
+        Parameters
+        ----------
+        df: pd.DataFrame
+            The training metrics dataframe.
+
+        Returns
+        -------
+        None
+
+        """
+        self.metrics = df
+
+    def update_metrics(self, series):
+        """Updates the metrics dataframe after one epoch.
+
+        Parameters
+        ----------
+        series: pd.Series
+            The new row of metrics to add at the
+            end of the metrics dataframe.
+
+        Returns
+        -------
+        None
+
+        """
+        self.metrics = pd.concat([self.metrics, series.to_frame().T], ignore_index=True)
+
+
+class LN_FMNIST_MLP(nn.Module):
+    """The MLP model we train on the FashionMNIST dataset.
+
+    Parameters
+    ----------
+    hidden_layers: int, default=2
+        The number of hidden fully connected layers.
+    dropout_rate: float, default=0
+        The dropout rate.
+
+    Attributes
+    ----------
+    flatten: nn.Flatten
+        A flatten layer.
+    linear_relu_stack: nn.Sequential
+        A stack of liner layers with ReLU
+        activations.
+    metrics: pd.DataFrame
+        The training metrics dataframe.
+    """
+
+    def __init__(self, hidden_layers=2, dropout_rate=0.0):
+
+        super().__init__()
+        self.flatten = nn.Flatten()
+        self.list_hidden = []
+        for _ in range(hidden_layers - 1):
+            self.list_hidden.append(nn.Linear(512, 512))
+            self.list_hidden.append(self.LayerNormalization(512))
+            self.list_hidden.append(nn.ReLU())
+            
+            self.list_hidden.append(nn.Dropout(dropout_rate))
+        self.linear_relu_stack = nn.Sequential(
+            
+            nn.Linear(28 * 28, 512),
+            self.LayerNormalization(512),
+            nn.ReLU(),
+            nn.Dropout(dropout_rate),
+            *self.list_hidden,
+            nn.Linear(512, 10),
+        )
+        self.metrics = pd.DataFrame(
+            columns=["train_loss", "train_acc", "test_loss", "test_acc"]
+        )
+
+    def forward(self, x):
+        """The forward pass.
+
+        Parameters
+        ----------
+        x: Tensor
+            The input tensor, of shape `(batch_size, 1, 28, 28)`.
+
+        Returns
+        -------
+        logits: Tensor
+            The unnormalized logits, of shape `(batch_size, 10)`.
+        """
+        x = self.flatten(x)
+        logits = self.linear_relu_stack(x)
+        return logits
+
+    def set_metrics(self, df):
+        """Sets the metrics dataframe.
+
+        Used when a saved model is loaded,
+        to also load its past training metrics dataframe.
+
+        Parameters
+        ----------
+        df: pd.DataFrame
+            The training metrics dataframe.
+
+        Returns
+        -------
+        None
+
+        """
+        self.metrics = df
+
+    def update_metrics(self, series):
+        """Updates the metrics dataframe after one epoch.
+
+        Parameters
+        ----------
+        series: pd.Series
+            The new row of metrics to add at the
+            end of the metrics dataframe.
+
+        Returns
+        -------
+        None
+
+        """
+        self.metrics = pd.concat([self.metrics, series.to_frame().T], ignore_index=True)
 
 def train(dataloader, model, loss_fn, optimizer, device, mode=None):
     """The training step for one epoch.
@@ -469,4 +791,4 @@ if __name__ == "__main__":
         epochs=args.epochs,
         mode=mode,
     )
-    training_curves(model, "st")
+    training_curves(model, mode)
